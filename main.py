@@ -27,13 +27,16 @@ if os.path.exists(BASE_DIR):
 os.makedirs(FOLDER_RU, exist_ok=True)
 os.makedirs(FOLDER_EURO, exist_ok=True)
 
-TIMEOUT = 3 
+# Увеличил тайм-аут до 5 сек (Россия иногда тупит)
+TIMEOUT = 5 
 socket.setdefaulttimeout(TIMEOUT)
 
 THREADS = 40 
 CACHE_HOURS = 12
 CHUNK_LIMIT = 1000
-MAX_KEYS_TO_CHECK = 4000 
+
+# УВЕЛИЧИЛ ЛИМИТ ПРОВЕРКИ (было 4000)
+MAX_KEYS_TO_CHECK = 15000 
 
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 MY_CHANNEL = "@vlesstrojan" 
@@ -157,16 +160,22 @@ def extract_ping(key_str):
         return int(ping_part)
     except: return None
 
-# ВОТ ОНА, РОДНАЯ!
+# ИСПРАВЛЕННАЯ ФУНКЦИЯ (Теперь создает файл, даже если он пустой)
 def save_chunked(keys_list, folder, base_name):
-    if not keys_list: return
+    # Если список пуст, создаем пустой файл, чтобы не было 404
+    if not keys_list:
+        fname = f"{base_name}.txt"
+        with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
+            f.write("") # Пустой файл
+        return
+
     chunks = [keys_list[i:i + CHUNK_LIMIT] for i in range(0, len(keys_list), CHUNK_LIMIT)]
     for i, chunk in enumerate(chunks, 1):
         fname = f"{base_name}.txt" if len(chunks) == 1 else f"{base_name}_part{i}.txt"
         with open(os.path.join(folder, fname), "w", encoding="utf-8") as f: f.write("\n".join(chunk))
 
 if __name__ == "__main__":
-    print(f"=== CHECKER v8.1 (Fixed Save) ===")
+    print(f"=== CHECKER v9 (No 404 + More Keys) ===")
     
     history = load_json(HISTORY_FILE)
     tasks = fetch_keys(URLS_RU, "RU") + fetch_keys(URLS_MY, "MY")
@@ -177,7 +186,7 @@ if __name__ == "__main__":
     
     all_items = list(unique_tasks)
     if len(all_items) > MAX_KEYS_TO_CHECK:
-        print(f"⚠️ Слишком много ключей! Берем первые {MAX_KEYS_TO_CHECK} для скорости.")
+        print(f"⚠️ Ограничиваем проверку до {MAX_KEYS_TO_CHECK} ключей.")
         all_items = all_items[:MAX_KEYS_TO_CHECK]
     
     current_time = time.time()
@@ -226,17 +235,18 @@ if __name__ == "__main__":
 
     save_json(HISTORY_FILE, {k:v for k,v in history.items() if current_time - v['time'] < 259200})
     
-    res_ru = [k for k in res_ru if extract_ping(k) is not None]
-    res_euro = [k for k in res_euro if extract_ping(k) is not None]
+    # Сортировка
+    res_ru_clean = [k for k in res_ru if extract_ping(k) is not None]
+    res_euro_clean = [k for k in res_euro if extract_ping(k) is not None]
 
-    res_ru.sort(key=extract_ping)
-    res_euro.sort(key=extract_ping)
+    res_ru_clean.sort(key=extract_ping)
+    res_euro_clean.sort(key=extract_ping)
     
-    print(f"RU Result: {len(res_ru)}")
-    print(f"Euro Result: {len(res_euro)}")
+    print(f"RU Valid: {len(res_ru_clean)}")
+    print(f"Euro Valid: {len(res_euro_clean)}")
 
-    save_chunked(res_ru, FOLDER_RU, "ru_white")
-    save_chunked(res_euro, FOLDER_EURO, "my_euro")
+    save_chunked(res_ru_clean, FOLDER_RU, "ru_white")
+    save_chunked(res_euro_clean, FOLDER_EURO, "my_euro")
 
     GITHUB_USER_REPO = "kort0881/vpn-checker-backend"
     BRANCH = "main"
@@ -252,6 +262,7 @@ if __name__ == "__main__":
         f.write("\n".join(subs))
 
     print("=== DONE SUCCESS ===")
+
 
 
 
