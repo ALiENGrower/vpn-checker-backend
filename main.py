@@ -1,3 +1,12 @@
+import signal
+
+# Ограничить выполнение скрипта
+def handler(signum, frame):
+    print("Timeout reached, exiting...")
+    raise TimeoutError()
+
+signal.signal(signal.SIGALRM, handler)
+signal.alarm(300 * 60)  # максимум 300 минут (5 часов)
 import os
 import re
 import html
@@ -262,6 +271,7 @@ if __name__ == "__main__":
         f.write("\n".join(subs_lines))
 
     print("=== SUCCESS: LISTS GENERATED ===")
+
 
 
 
