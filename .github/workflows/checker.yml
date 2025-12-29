@@ -34,3 +34,13 @@ jobs:
         with:
           commit_message: "Auto-update checked keys"
           file_pattern: "checked/*"
+concurrency:
+  group: key-checker
+  cancel-in-progress: true
+  - name: Cache pip
+  uses: actions/cache@v3
+  with:
+    path: ~/.cache/pip
+    key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+    restore-keys: |
+      ${{ runner.os }}-pip-
