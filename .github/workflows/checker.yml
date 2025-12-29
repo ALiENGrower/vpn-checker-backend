@@ -2,8 +2,12 @@ name: Auto Key Checker
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Каждые 4 часа
-  workflow_dispatch:       # Кнопка запуска
+    - cron: '0 */12 * * *'   # каждые 12 часа (UTC)
+  workflow_dispatch:        # ручной запуск кнопкой
+
+concurrency:
+  group: key-checker
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -11,11 +15,19 @@ permissions:
 jobs:
   check-keys:
     runs-on: ubuntu-latest
-    timeout-minutes: 350   # Лимит 6 часов, чтобы не отрубило раньше
-    
+    timeout-minutes: 350
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -27,20 +39,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Checker Script
-        run: python main.py
+        run: |
+          python main.py | tee run.log
 
       - name: Commit & Push Results
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: "Auto-update checked keys"
-          file_pattern: "checked/*"
-concurrency:
-  group: key-checker
-  cancel-in-progress: true
-  - name: Cache pip
-  uses: actions/cache@v3
-  with:
-    path: ~/.cache/pip
-    key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-    restore-keys: |
-      ${{ runner.os }}-pip-
+          file_pattern: |
+            checked/*
+            run.log
+          skip_empty_commit: true
