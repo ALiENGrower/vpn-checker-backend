@@ -1,15 +1,6 @@
 import signal
-
-# Ограничить выполнение скрипта
-def handler(signum, frame):
-    print("Timeout reached, exiting...")
-    raise TimeoutError()
-
-signal.signal(signal.SIGALRM, handler)
-signal.alarm(300 * 60)  # максимум 300 минут (5 часов)
 import os
 import re
-import html
 import socket
 import ssl
 import time
@@ -18,29 +9,63 @@ import requests
 import base64
 import websocket
 import shutil
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 from concurrent.futures import ThreadPoolExecutor
 
-# ------------------ Настройки ------------------
+# --- БЛОК ТЕЛЕГРАМ-УВЕДОМЛЕНИЙ ---
+
+def send_telegram_report(message, files=None):
+    """Отправляет текстовый отчет и прикрепляет файлы нескольким пользователям."""
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    chat_ids_str = os.getenv('TELEGRAM_CHAT_ID')
+    
+    if token and chat_ids_str:
+        # Разбиваем строку с ID на список
+        chat_ids = [chat.strip() for chat in chat_ids_str.split(',')]
+        
+        for chat_id in chat_ids:
+            try:
+                # 1. Отправка текста
+                url_msg = f"https://api.telegram.org/bot{token}/sendMessage"
+                payload = {
+                    "chat_id": chat_id, 
+                    "text": message, 
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True
+                }
+                requests.post(url_msg, json=payload, timeout=10)
+                
+                # 2. Отправка файлов (если они переданы)
+                if files:
+                    url_doc = f"https://api.telegram.org/bot{token}/sendDocument"
+                    for file_path in files:
+                        if os.path.exists(file_path):
+                            with open(file_path, 'rb') as f:
+                                requests.post(url_doc, data={'chat_id': chat_id}, files={'document': f}, timeout=20)
+            except Exception as e:
+                print(f"Ошибка отправки для {chat_id}: {e}")
+
+# --- СИСТЕМНЫЕ НАСТРОЙКИ ---
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Превышено время выполнения скрипта")
+
+signal.signal(signal.SIGALRM, timeout_handler)
+signal.alarm(300 * 60) # Лимит 5 часов
+
 BASE_DIR = "checked"
 FOLDER_RU = os.path.join(BASE_DIR, "RU_Best")
 FOLDER_EURO = os.path.join(BASE_DIR, "My_Euro")
-
-# Чистим папки перед стартом
-if os.path.exists(FOLDER_RU): shutil.rmtree(FOLDER_RU)
-if os.path.exists(FOLDER_EURO): shutil.rmtree(FOLDER_EURO)
-os.makedirs(FOLDER_RU, exist_ok=True)
-os.makedirs(FOLDER_EURO, exist_ok=True)
-
-TIMEOUT = 5 
-socket.setdefaulttimeout(TIMEOUT)
-THREADS = 40 
-CACHE_HOURS = 12
-CHUNK_LIMIT = 300 
-MAX_KEYS_TO_CHECK = 15000 
-
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
-MY_CHANNEL = "@vlesstrojan" 
+
+GITHUB_REPO = os.getenv('GITHUB_REPOSITORY', 'ALiENGrower/vpn-checker-backend')
+
+TIMEOUT = 5
+THREADS = 40
+CACHE_HOURS = 12
+CHUNK_LIMIT = 300
+MAX_KEYS = 15000
+socket.setdefaulttimeout(TIMEOUT)
 
 URLS_RU = [
     "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
@@ -52,96 +77,69 @@ URLS_RU = [
     "https://s3c3.001.gpucloud.ru/vahe4xkwi/cjdr"
 ]
 
-# Ссылка на твою папку NEW
 URLS_MY = [
     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt"
 ]
 
 EURO_CODES = {"NL", "DE", "FI", "GB", "FR", "SE", "PL", "CZ", "AT", "CH", "IT", "ES", "NO", "DK", "BE", "IE", "LU", "EE", "LV", "LT"}
-BAD_MARKERS = ["CN", "IR", "KR", "BR", "IN", "RELAY", "POOL", "🇨🇳", "🇮🇷", "🇰🇷"] 
+BAD_MARKERS = ["CN", "IR", "KR", "BR", "IN", "RELAY", "POOL"]
 
-def load_json(path):
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f: return json.load(f)
-        except: pass
-    return {}
-
-def save_json(path, data):
-    try:
-        with open(path, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=2)
-    except: pass
+# --- ФУНКЦИИ ОБРАБОТКИ ---
 
 def get_country_fast(host, key_name):
-    try:
-        host = host.lower()
-        name = key_name.upper()
-        if host.endswith(".ru"): return "RU"
-        if host.endswith(".de"): return "DE"
-        if host.endswith(".nl"): return "NL"
-        if host.endswith(".uk") or host.endswith(".co.uk"): return "GB"
-        if host.endswith(".fr"): return "FR"
-        for code in EURO_CODES:
-            if code in name: return code
-    except: pass
-    return "UNKNOWN"
-
-def is_garbage_text(key_str):
-    upper = key_str.upper()
-    for m in BAD_MARKERS:
-        if m in upper: return True
-    if ".ir" in key_str or ".cn" in key_str or "127.0.0.1" in key_str: return True
-    return False
+    host, name = host.lower(), key_name.upper()
+    if host.endswith(".ru"): return "RU"
+    if host.endswith(".de"): return "DE"
+    if host.endswith(".nl"): return "NL"
+    for code in EURO_CODES:
+        if code in name: return code
+    return "UN"
 
 def fetch_keys(urls, tag):
-    out = []
-    print(f"Загрузка {tag}...")
+    extracted = []
     for url in urls:
         try:
-            r = requests.get(url, timeout=10)
+            r = requests.get(url, timeout=15)
             if r.status_code != 200: continue
             content = r.text.strip()
-            if "://" not in content:
-                try: lines = base64.b64decode(content + "==").decode('utf-8', errors='ignore').splitlines()
-                except: lines = content.splitlines()
-            else: lines = content.splitlines()
             
-            for l in lines:
-                l = l.strip()
-                if len(l) > 2000: continue 
-                if l.startswith(("vless://", "vmess://", "trojan://", "ss://")):
+            if "://" not in content:
+                try:
+                    lines = base64.b64decode(content + "==").decode('utf-8', errors='ignore').splitlines()
+                except:
+                    lines = content.splitlines()
+            else:
+                lines = content.splitlines()
+
+            for line in lines:
+                line = line.strip()
+                if 20 < len(line) < 2500 and line.startswith(("vless://", "vmess://", "trojan://", "ss://")):
                     if tag == "MY":
-                        if is_garbage_text(l): continue
-                    out.append((l, tag))
-        except: pass
-    return out
+                        upper_l = line.upper()
+                        if any(m in upper_l for m in BAD_MARKERS) or ".ir" in line or ".cn" in line:
+                            continue
+                    extracted.append((line, tag))
+        except:
+            continue
+    return extracted
 
 def check_single_key(data):
     key, tag = data
     try:
-        if "@" in key and ":" in key:
-            part = key.split("@")[1].split("?")[0].split("#")[0]
-            host, port = part.split(":")[0], int(part.split(":")[1])
-        else: return None, None, None
-
-        country = get_country_fast(host, key)
+        part = key.split("@")[1].split("?")[0].split("#")[0]
+        host, port = part.split(":")[0], int(part.split(":")[1])
         
-        # Разрешаем ВСЁ для MY (кроме России)
-        if tag == "MY":
-            if country == "RU": return None, None, None
+        country = get_country_fast(host, key)
+        if tag == "MY" and country == "RU": return None
 
-        is_tls = 'security=tls' in key or 'security=reality' in key or 'trojan://' in key or 'vmess://' in key
+        is_tls = any(s in key for s in ['security=tls', 'security=reality', 'trojan://', 'vmess://'])
         is_ws = 'type=ws' in key or 'net=ws' in key
-        path = "/"
-        match = re.search(r'path=([^&]+)', key)
-        if match: path = unquote(match.group(1))
-
-        start = time.time()
+        
+        start_time = time.time()
         
         if is_ws:
-            protocol = "wss" if is_tls else "ws"
-            ws_url = f"{protocol}://{host}:{port}{path}"
-            ws = websocket.create_connection(ws_url, timeout=TIMEOUT, sslopt={"cert_reqs": ssl.CERT_NONE}, sockopt=((socket.SOL_SOCKET, socket.SO_RCVTIMEO, TIMEOUT),))
+            path = unquote(re.search(r'path=([^&]+)', key).group(1)) if 'path=' in key else "/"
+            ws = websocket.create_connection(f"{'wss' if is_tls else 'ws'}://{host}:{port}{path}", timeout=TIMEOUT, sslopt={"cert_reqs": ssl.CERT_NONE})
             ws.close()
         elif is_tls:
             context = ssl.create_default_context()
@@ -152,153 +150,104 @@ def check_single_key(data):
         else:
             with socket.create_connection((host, port), timeout=TIMEOUT): pass
             
-        latency = int((time.time() - start) * 1000)
-        return latency, tag, country
-    except: return None, None, None
+        latency = int((time.time() - start_time) * 1000)
+        return (latency, tag, country)
+    except:
+        return None
 
-def extract_ping(key_str):
-    try:
-        label = key_str.split("#")[-1]
-        if "ms_" not in label: return None
-        ping_part = label.split("ms_")[0]
-        return int(ping_part)
-    except: return None
-
-# === ИСПРАВЛЕННАЯ ФУНКЦИЯ: ТЕКСТ ВМЕСТО BASE64 ===
-def save_chunked(keys_list, folder, base_name):
-    created_files = []
+def save_chunked(keys, folder, base_name):
+    created = []
+    if not keys:
+        path = os.path.join(folder, f"{base_name}.txt")
+        with open(path, "w") as f: f.write("")
+        return [f"{base_name}.txt"]
     
-    # 1. Убираем пустые
-    valid_keys = [k.strip() for k in keys_list if k and k.strip()]
-
-    # 2. Если ключей нет - пустой файл
-    if not valid_keys:
-        fname = f"{base_name}.txt"
-        path = os.path.join(folder, fname)
-        with open(path, "w", encoding="utf-8") as f: f.write("")
-        created_files.append(fname)
-        return created_files
-
-    # 3. Разбиваем на части
-    chunks = [valid_keys[i:i + CHUNK_LIMIT] for i in range(0, len(valid_keys), CHUNK_LIMIT)]
-    
+    chunks = [keys[i:i + CHUNK_LIMIT] for i in range(0, len(keys), CHUNK_LIMIT)]
     for i, chunk in enumerate(chunks, 1):
-        if len(chunks) == 1: fname = f"{base_name}.txt"
-        else: fname = f"{base_name}_part{i}.txt"
-            
-        # 4. ПИШЕМ ОБЫЧНЫЙ ТЕКСТ (СПИСОК)
-        content = "\n".join(chunk)
-        
-        with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
-            f.write(content)
-            
-        created_files.append(fname)
-        
-    return created_files
+        name = f"{base_name}.txt" if len(chunks) == 1 else f"{base_name}_part{i}.txt"
+        with open(os.path.join(folder, name), "w", encoding="utf-8") as f:
+            f.write("\n".join(chunk))
+        created.append(name)
+    return created
+
+# --- ОСНОВНОЙ ЦИКЛ ---
 
 if __name__ == "__main__":
-    print(f"=== CHECKER v10.0 (TEXT FILES FIXED) ===")
+    for f in [FOLDER_RU, FOLDER_EURO]:
+        if os.path.exists(f): shutil.rmtree(f)
+        os.makedirs(f, exist_ok=True)
+
+    history = {}
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r") as f: history = json.load(f)
+        except: pass
+
+    raw_tasks = fetch_keys(URLS_RU, "RU") + fetch_keys(URLS_MY, "MY")
+    unique_tasks = list({t[0]: t[1] for t in raw_tasks}.items())[:MAX_KEYS]
     
-    history = load_json(HISTORY_FILE)
-    tasks = fetch_keys(URLS_RU, "RU") + fetch_keys(URLS_MY, "MY")
-    
-    unique_tasks = {k: tag for k, tag in tasks}.items()
-    all_items = list(unique_tasks)
-    if len(all_items) > MAX_KEYS_TO_CHECK:
-        all_items = all_items[:MAX_KEYS_TO_CHECK]
-    
-    current_time = time.time()
-    to_check = []
-    res_ru = []
-    res_euro = []
-    
-    for k, tag in all_items:
-        k_id = k.split("#")[0]
-        cached = history.get(k_id)
-        if cached and (current_time - cached['time'] < CACHE_HOURS * 3600) and cached['alive']:
-            latency = cached['latency']
-            country = cached.get('country', 'UNKNOWN')
-            label = f"{latency}ms_{country}_{MY_CHANNEL}"
-            final = f"{k_id}#{label}"
-            
-            if tag == "RU": res_ru.append(final)
-            elif tag == "MY":
-                if country != "RU": res_euro.append(final)
+    now = time.time()
+    to_check, final_ru, final_euro = [], [], []
+
+    for key, tag in unique_tasks:
+        kid = key.split("#")[0]
+        cached = history.get(kid)
+        if cached and (now - cached['time'] < CACHE_HOURS * 3600) and cached.get('alive'):
+            entry = f"{kid}#{cached['latency']}ms_{cached.get('country','UN')}"
+            if tag == "RU": final_ru.append(entry)
+            else: final_euro.append(entry)
         else:
-            to_check.append((k, tag))
+            to_check.append((key, tag))
 
     if to_check:
         with ThreadPoolExecutor(max_workers=THREADS) as executor:
-            future_to_item = {executor.submit(check_single_key, item): item for item in to_check}
-            for i, future in enumerate(future_to_item):
-                key, tag = future_to_item[future]
-                res = future.result()
-                if not res or res[0] is None: continue
-                latency, tag, country = res
-                k_id = key.split("#")[0]
-                history[k_id] = {'alive': True, 'latency': latency, 'time': current_time, 'country': country}
-                label = f"{latency}ms_{country}_{MY_CHANNEL}"
-                final = f"{k_id}#{label}"
-                
-                if tag == "RU": res_ru.append(final)
-                elif tag == "MY":
-                    if country != "RU": res_euro.append(final)
+            results = list(executor.map(check_single_key, to_check))
+            for i, res in enumerate(results):
+                if res:
+                    latency, tag, country = res
+                    kid = to_check[i][0].split("#")[0]
+                    history[kid] = {'alive': True, 'latency': latency, 'time': now, 'country': country}
+                    entry = f"{kid}#{latency}ms_{country}"
+                    if tag == "RU": final_ru.append(entry)
+                    else: final_euro.append(entry)
 
-    save_json(HISTORY_FILE, {k:v for k,v in history.items() if current_time - v['time'] < 259200})
+    history = {k: v for k, v in history.items() if now - v['time'] < 259200}
+    with open(HISTORY_FILE, "w") as f: json.dump(history, f, indent=2)
+
+    def get_ms(s):
+        try: return int(re.search(r'(\d+)ms', s).group(1))
+        except: return 9999
+
+    final_ru.sort(key=get_ms)
+    final_euro.sort(key=get_ms)
+
+    ru_files = save_chunked(final_ru, FOLDER_RU, "ru_white")
+    euro_files = save_chunked(final_euro, FOLDER_EURO, "my_euro")
+
+    # Генерация списка подписок
+    sub_list_path = os.path.join(BASE_DIR, "subscriptions_list.txt")
+    base_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{BASE_DIR}"
+    sub_text = "=== SUBSCRIPTIONS ===\n"
+    for f in ru_files: sub_text += f"{base_url}/RU_Best/{f}\n"
+    for f in euro_files: sub_text += f"{base_url}/My_Euro/{f}\n"
     
-    res_ru_clean = [k for k in res_ru if extract_ping(k) is not None]
-    res_euro_clean = [k for k in res_euro if extract_ping(k) is not None]
-    res_ru_clean.sort(key=extract_ping)
-    res_euro_clean.sort(key=extract_ping)
+    with open(sub_list_path, "w", encoding="utf-8") as f:
+        f.write(sub_text)
 
-    ru_files = save_chunked(res_ru_clean, FOLDER_RU, "ru_white")
-    euro_files = save_chunked(res_euro_clean, FOLDER_EURO, "my_euro")
+    # ПОДГОТОВКА ОТЧЕТА И ФАЙЛОВ ДЛЯ TG
+    files_to_send = [sub_list_path]
+    for f in ru_files: files_to_send.append(os.path.join(FOLDER_RU, f))
+    for f in euro_files: files_to_send.append(os.path.join(FOLDER_EURO, f))
 
-    GITHUB_USER_REPO = "ALiENGrower/vpn-checker-backend"
-    BRANCH = "main"
-    BASE_URL_RU = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}/{BASE_DIR}/RU_Best"
-    BASE_URL_EURO = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}/{BASE_DIR}/My_Euro"
+    msg = (
+        f"✅ <b>Система когерентности обновлена</b>\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"🇷🇺 Россия (RU): <code>{len(final_ru)}</code>\n"
+        f"🇪🇺 Европа (EURO): <code>{len(final_euro)}</code>\n"
+        f"🕒 В базе кэша: {len(history)}\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"📦 Все файлы прикреплены к отчету."
+    )
     
-    subs_lines = ["=== 🇷🇺 RUSSIA (BASE64) ==="]
-    for f in ru_files:
-        subs_lines.append(f"{BASE_URL_RU}/{f} | Russia Best")
-        
-    subs_lines.append("\n=== 🇪🇺 EUROPE (BASE64) ===")
-    for f in euro_files:
-        subs_lines.append(f"{BASE_URL_EURO}/{f} | Europe Best")
-
-    with open(os.path.join(BASE_DIR, "subscriptions_list.txt"), "w", encoding="utf-8") as f:
-        f.write("\n".join(subs_lines))
-
-    print("=== SUCCESS: LISTS GENERATED ===")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    send_telegram_report(msg, files=files_to_send)
+    print("Успех. Отчет отправлен.")
