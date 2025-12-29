@@ -36,7 +36,7 @@ TIMEOUT = 5
 socket.setdefaulttimeout(TIMEOUT)
 THREADS = 40 
 CACHE_HOURS = 12
-CHUNK_LIMIT = 1000 
+CHUNK_LIMIT = 300 
 MAX_KEYS_TO_CHECK = 15000 
 
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
@@ -271,6 +271,7 @@ if __name__ == "__main__":
         f.write("\n".join(subs_lines))
 
     print("=== SUCCESS: LISTS GENERATED ===")
+
 
 
 
