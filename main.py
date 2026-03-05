@@ -64,14 +64,14 @@ TIMEOUT = 5
 THREADS = 40
 CACHE_HOURS = 12
 CHUNK_LIMIT = 300
-MAX_KEYS = 15000
+MAX_KEYS = 30000
 socket.setdefaulttimeout(TIMEOUT)
 
 # Новые константы из main(vpn).py
 MAX_PING_MS = 3000
 FAST_LIMIT = 3000
 MAX_HISTORY_AGE = 2 * 24 * 3600
-MY_CHANNEL = "@vlesstrojan"
+MY_CHANNEL = "∞"
 
 # Фиксированные имена файлов для FAST слоя
 RU_FILES = ["ru_white_part1.txt", "ru_white_part2.txt", "ru_white_part3.txt", "ru_white_part4.txt"]
@@ -532,3 +532,4 @@ if __name__ == "__main__":
     send_telegram_report(msg, files=files_to_send)
     print("\n✅ SUCCESS: FAST/ALL LAYERS GENERATED")
     print("Успех. Отчет отправлен.")
+
