@@ -91,7 +91,13 @@ URLS_RU = [
     "https://raw.githubusercontent.com/vsevjik/OBSpiskov/refs/heads/main/wwh",
     "https://jsnegsukavsos.hb.ru-msk.vkcloud-storage.ru/love",
     "https://etoneya.a9fm.site/1",
-    "https://s3c3.001.gpucloud.ru/vahe4xkwi/cjdr"
+    "https://s3c3.001.gpucloud.ru/vahe4xkwi/cjdr",
+     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/hysteria2.txt",
+        "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/ss.txt",
+        "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/vmess.txt",
+        "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/hy2.txt",
+        "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/trojan.txt",
+    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/vless.txt",
 ]
 
 URLS_MY = [
@@ -532,4 +538,5 @@ if __name__ == "__main__":
     send_telegram_report(msg, files=files_to_send)
     print("\n✅ SUCCESS: FAST/ALL LAYERS GENERATED")
     print("Успех. Отчет отправлен.")
+
 
