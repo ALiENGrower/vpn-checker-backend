@@ -63,7 +63,7 @@ GITHUB_REPO = os.getenv('GITHUB_REPOSITORY', 'ALiENGrower/vpn-checker-backend')
 TIMEOUT = 5
 THREADS = 40
 CACHE_HOURS = 12
-CHUNK_LIMIT = 300
+CHUNK_LIMIT = 500
 MAX_KEYS = 30000
 socket.setdefaulttimeout(TIMEOUT)
 
@@ -98,6 +98,9 @@ URLS_RU = [
     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/hy2.txt",
     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/trojan.txt",
     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni/vless.txt",
+    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/new/all_new.txt",
+    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/ru-sni-local/vless.txt",
+    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/clean/hysteria2.txt",
 ]
 
 URLS_MY = [
@@ -538,6 +541,7 @@ if __name__ == "__main__":
     send_telegram_report(msg, files=files_to_send)
     print("\n✅ SUCCESS: FAST/ALL LAYERS GENERATED")
     print("Успех. Отчет отправлен.")
+
 
 
 
