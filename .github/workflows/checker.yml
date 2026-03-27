@@ -2,7 +2,7 @@ name: Auto Key Checker
 
 on:
   schedule:
-    - cron: '13 8 * * *'  # запуск каждый день в 11:13 по МСК 
+    - cron: '6 */4 * * *'  # запуск каждый день в 11:13 по МСК 
   workflow_dispatch:        # возможность запускать вручную
 
 concurrency:
