@@ -63,7 +63,7 @@ GITHUB_REPO = os.getenv('GITHUB_REPOSITORY', 'ALiENGrower/vpn-checker-backend')
 TIMEOUT = 5
 THREADS = 40
 CACHE_HOURS = 12
-CHUNK_LIMIT = 3000
+CHUNK_LIMIT = 6660
 MAX_KEYS = 30000
 socket.setdefaulttimeout(TIMEOUT)
 
